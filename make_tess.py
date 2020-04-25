@@ -96,6 +96,13 @@ def get_error_from_one_more_point(input_img: ndarray, one_d_array: List, new_pt:
     return get_error_from_one_d_array(input_img, new_array)
 
 
+def make_x_y_list(num_pairs: int) -> List[ndarray]:
+    new_pairs = []
+    for _ in range(num_pairs):
+        new_pairs.append(np.random.rand(2))
+    return new_pairs
+
+
 def main():
     args = parseargs()
     output_dir = Path.cwd() / args.output_dir
@@ -104,7 +111,7 @@ def main():
         input_img_full, 0.2, multichannel=True, anti_aliasing=True)
 
     f_name = 'tmp_best.pickle'
-    nun_jobs = 4
+    nun_cores = 10
 
     # num_points = 100
     # bounds = [(0, 1) for _ in range(2*num_points)]
@@ -112,7 +119,8 @@ def main():
     # cal = partial(get_error_from_one_d_array, input_img)
     # # print(cal(one_d_array))
     #
-    # all_results = Parallel(n_jobs=nun_jobs)(delayed(
+    # num_jobs = num_cores
+    # all_results = Parallel(n_jobs=nun_cores)(delayed(
     #     optimize.dual_annealing)(cal, bounds, maxiter=1, seed=(1000+i*10)) for i in range(nun_jobs))
     #
     # # results = optimize.dual_annealing(cal, bounds, maxiter=1)
@@ -134,27 +142,46 @@ def main():
         best_result = pickle.load(f)
     output_img = make_tess_img(input_img_full, best_result.x)
     output_dir.mkdir(parents=True, exist_ok=True)
-    io.imsave(output_dir / 'frame_0.jpg', output_img)
+    i = 0
+    file_format = 'frame_{:04d}.png'
+    io.imsave(output_dir / file_format.format(i), output_img)
 
     centers_so_far = best_result.x
-    num_additional_frames = 10
-    one_center_bound = [(0, 1) for _ in range(2)]
+    num_additional_frames = 1000
+    # one_center_bound = [(0, 1) for _ in range(2)]
+    num_new_pt_trials = 1000
     for f in range(1, num_additional_frames+1):
         print('starting frame {}'.format(f))
+        x_y_list = make_x_y_list(num_new_pt_trials)
         one_point_calc = partial(get_error_from_one_more_point, input_img, centers_so_far)
-        all_results = Parallel(n_jobs=nun_jobs)(delayed(
-            optimize.dual_annealing)(
-            one_point_calc, one_center_bound, maxiter=1, seed=(1000+i*10)) for i in range(20))
+
+        # all_results = Parallel(n_jobs=nun_cores)(delayed(
+        #     optimize.dual_annealing)(
+        #     one_point_calc, one_center_bound, maxiter=1, seed=(1000+i*10)) for i in range(1000))
+        # best_result = None
+        # best_score = 100000
+        # for result in all_results:
+        #     if result.fun < best_score:
+        #         best_result = result
+        #         best_score = result.fun
+        # print(best_result)
+        # centers_so_far = update_1d_array(centers_so_far, best_result.x)
+        # output_img = make_tess_img(input_img_full, centers_so_far)
+        # io.imsave(output_dir / 'frame_{}.jpg'.format(f), output_img)
+
+        all_scores = Parallel(n_jobs=nun_cores)(delayed(
+            one_point_calc)(x_y_list[i]) for i in range(num_new_pt_trials))
+
         best_result = None
         best_score = 100000
-        for result in all_results:
-            if result.fun < best_score:
-                best_result = result
-                best_score = result.fun
-        print(best_result)
-        centers_so_far = update_1d_array(centers_so_far, best_result.x)
+        for i in range(num_new_pt_trials):
+            if all_scores[i] < best_score:
+                best_result = x_y_list[i]
+                best_score = all_scores[i]
+        print(best_result, best_score)
+        centers_so_far = update_1d_array(centers_so_far, list(best_result.tolist()))
         output_img = make_tess_img(input_img_full, centers_so_far)
-        io.imsave(output_dir / 'frame_{}.jpg'.format(f), output_img)
+        io.imsave(output_dir / file_format.format(f), output_img)
 
 
 if __name__ == '__main__':
